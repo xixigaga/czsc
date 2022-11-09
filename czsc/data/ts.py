@@ -1,213 +1,157 @@
-# coding: utf-8
+# -*- coding: utf-8 -*-
+"""
+author: zengbin93
+email: zeng_bin8888@163.com
+create_dt: 2021/6/25 18:52
+"""
+import time
+import json
+import requests
 import pandas as pd
 import tushare as ts
-from datetime import datetime, timedelta
+from deprecated import deprecated
+from datetime import datetime
+from typing import List
+from functools import partial
+from loguru import logger
+
+from ..analyze import RawBar
+from ..enum import Freq
 
 
-pro = ts.pro_api()
+# 数据频度 ：支持分钟(min)/日(D)/周(W)/月(M)K线，其中1min表示1分钟（类推1/5/15/30/60分钟）。
+# 对于分钟数据有600积分用户可以试用（请求2次），正式权限请在QQ群私信群主或积分管理员。
+freq_map = {Freq.F1: "1min", Freq.F5: '5min', Freq.F15: "15min", Freq.F30: '30min',
+            Freq.F60: "60min", Freq.D: 'D', Freq.W: "W", Freq.M: "M"}
+freq_cn_map = {"1分钟": Freq.F1, "5分钟": Freq.F5, "15分钟": Freq.F15, "30分钟": Freq.F30,
+               "60分钟": Freq.F60, "日线": Freq.D}
+exchanges = {
+    "SSE": "上交所",
+    "SZSE": "深交所",
+    "CFFEX": "中金所",
+    "SHFE": "上期所",
+    "CZCE": "郑商所",
+    "DCE": "大商所",
+    "INE": "能源",
+    "IB": "银行间",
+    "XHKG": "港交所"
+}
+
+dt_fmt = "%Y-%m-%d %H:%M:%S"
+date_fmt = "%Y%m%d"
 
 
-def set_token(token):
-    """在同一台机器上只需要调用 set_token 一次就可以
+class TushareProApi:
+    __token = ''
+    __http_url = 'http://api.waditu.com'
 
-    :param token: str
-        tushare.pro 的 token，如果没有，请到这里注册：https://tushare.pro/register?reg=7
-    :return: None
+    def __init__(self, token, timeout=30):
+        """
+        Parameters
+        ----------
+        token: str
+            API接口TOKEN，用于用户认证
+        """
+        self.__token = token
+        self.__timeout = timeout
+
+    def query(self, api_name, fields='', **kwargs):
+        if api_name in ['__getstate__', '__setstate__']:
+            return pd.DataFrame()
+
+        req_params = {
+            'api_name': api_name,
+            'token': self.__token,
+            'params': kwargs,
+            'fields': fields
+        }
+
+        res = requests.post(self.__http_url, json=req_params, timeout=self.__timeout)
+        if res:
+            result = json.loads(res.text)
+            if result['code'] != 0:
+                logger.warning(f"{req_params}: {result}")
+                raise Exception(result['msg'])
+
+            data = result['data']
+            columns = data['fields']
+            items = data['items']
+            return pd.DataFrame(items, columns=columns)
+        else:
+            return pd.DataFrame()
+
+    def __getattr__(self, name):
+        return partial(self.query, name)
+
+
+try:
+    from tushare.util import upass
+    pro = TushareProApi(upass.get_token(), timeout=60)
+except:
+    print("Tushare Pro 初始化失败")
+
+
+def format_kline(kline: pd.DataFrame, freq: Freq) -> List[RawBar]:
+    """Tushare K线数据转换
+
+    :param kline: Tushare 数据接口返回的K线数据
+    :param freq: K线周期
+    :return: 转换好的K线数据
     """
-    ts.set_token(token)
+    bars = []
+    dt_key = 'trade_time' if '分钟' in freq.value else 'trade_date'
+    kline = kline.sort_values(dt_key, ascending=True, ignore_index=True)
+    records = kline.to_dict('records')
+
+    for i, record in enumerate(records):
+        if freq == Freq.D:
+            vol = int(record['vol']*100)
+            amount = int(record.get('amount', 0)*1000)
+        else:
+            vol = int(record['vol'])
+            amount = int(record.get('amount', 0))
+
+        # 将每一根K线转换成 RawBar 对象
+        bar = RawBar(symbol=record['ts_code'], dt=pd.to_datetime(record[dt_key]),
+                     id=i, freq=freq, open=record['open'], close=record['close'],
+                     high=record['high'], low=record['low'],
+                     vol=vol,          # 成交量，单位：股
+                     amount=amount,    # 成交额，单位：元
+                     )
+        bars.append(bar)
+    return bars
 
 
-def get_token():
-    """获取调用凭证"""
-    return ts.get_token()
-
-
-def get_concepts():
-    """获取概念列表
-
-    https://dataapi.joinquant.com/docs#get_concepts---%E8%8E%B7%E5%8F%96%E6%A6%82%E5%BF%B5%E5%88%97%E8%A1%A8
-
-    :return: df
+@deprecated(reason="统一到 TsDataCache 对象中", version='0.9.0')
+def get_kline(ts_code: str,
+              start_date: [datetime, str],
+              end_date: [datetime, str],
+              asset: str = 'E',
+              freq: Freq = Freq.F1,
+              fq: str = "qfq") -> List[RawBar]:
     """
-    return pro.concept(src='ts')
+    通用行情接口: https://tushare.pro/document/2?doc_id=109
 
-def get_concept_stocks(symbol, date=None):
-    """获取概念成份股
-
-    https://tushare.pro/document/2?doc_id=126
-
-    :param symbol: str
-        如 GN036
-    :param date: str or datetime
-        日期，如 2020-08-08
-    :return: list
-
-    examples:
-    -------
-    >>> symbols1 = get_concept_stocks("GN036", date="2020-07-08")
-    >>> symbols2 = get_concept_stocks("GN036", date=datetime.now())
-    """
-    del date
-    df = pro.concept_detail(id=symbol, fields='ts_code')
-    return list(set([x + "-E" for x in df.ts_code]))
-
-def get_index_stocks(symbol, date=None):
-    """获取指数成份股
-
-    https://dataapi.joinquant.com/docs#get_index_stocks---%E8%8E%B7%E5%8F%96%E6%8C%87%E6%95%B0%E6%88%90%E4%BB%BD%E8%82%A1
-
-    :param symbol: str
-        如 399300.SZ
-    :param date: str or datetime
-        日期，如 2020-08-08
-    :return: list
-
-    examples:
-    -------
-    >>> symbols1 = get_index_stocks("000300.XSHG", date="2020-07-08")
-    >>> symbols2 = get_index_stocks("000300.XSHG", date=datetime.now())
-    """
-    if not date:
-        date = datetime.now()
-
-    if isinstance(date, str):
-        date = pd.to_datetime(date)
-
-    start_date = date - timedelta(days=250)
-    end_date = date
-
-    df = pro.index_weight(index_code=symbol, start_date=start_date.strftime("%Y%m%d"),
-                          end_date=end_date.strftime("%Y%m%d"))
-    return list(set([x + "-E" for x in df.con_code]))
-
-
-def _get_start_date(end_date, freq):
-    if isinstance(end_date, str):
-        end_date = pd.to_datetime(end_date)
-
-    if freq == '1min':
-        start_date = end_date - timedelta(days=30)
-    elif freq == '5min':
-        start_date = end_date - timedelta(days=70)
-    elif freq == '30min':
-        start_date = end_date - timedelta(days=500)
-    elif freq == 'D':
-        start_date = end_date - timedelta(weeks=500)
-    elif freq == 'W':
-        start_date = end_date - timedelta(weeks=1000)
-    elif freq == 'M':
-        start_date = end_date - timedelta(weeks=2000)
-    else:
-        raise ValueError("'freq' value error, current value is %s, "
-                         "optional valid values are ['1min', '5min', '30min', "
-                         "'D', 'W']" % freq)
-    return start_date
-
-def get_kline(symbol,  end_date, freq, start_date=None, count=None):
-    """获取K线数据
-
-    :param symbol: str
-        Tushare 标的代码 + Tushare asset 代码，如 000001.SH-I
-    :param start_date: datetime
-        截止日期
-    :param end_date: datetime
-        截止日期
-    :param freq: str
-        K线级别，可选值 ['1min', '5min', '30min', '60min', 'D', 'W', "M"]
-    :param count: int
-        K线数量，最大值为 5000
-    :return: pd.DataFrame
-
-    >>> start_date = datetime.strptime("20200701", "%Y%m%d")
-    >>> end_date = datetime.strptime("20200719", "%Y%m%d")
-    >>> df1 = get_kline(symbol="000001.SH-I", start_date=start_date, end_date=end_date, freq="1min")
-    >>> df2 = get_kline(symbol="000001.SH-I", end_date=end_date, freq="1min", count=1000)
-    """
-    ts_code, asset = symbol.split("-")
-    if count:
-        start_date = _get_start_date(end_date, freq)
-        start_date = start_date.date().__str__().replace("-", "")
-
-        if isinstance(end_date, str):
-            end_date = pd.to_datetime(end_date)
-
-        end_date = end_date + timedelta(days=1)
-        end_date = end_date.date().__str__().replace("-", "")
-
-    if isinstance(end_date, datetime):
-        end_date = end_date.date().__str__().replace("-", "")
-
-    if isinstance(start_date, datetime):
-        start_date = start_date.date().__str__().replace("-", "")
-
-    df = ts.pro_bar(ts_code=ts_code, freq=freq, start_date=start_date, end_date=end_date,
-                    adj='qfq', asset=asset)
-
-    # 统一 k 线数据格式为 6 列，分别是 ["symbol", "dt", "open", "close", "high", "low", "vr"]
-    if "min" in freq:
-        df.rename(columns={'ts_code': "symbol", "trade_time": "dt"}, inplace=True)
-    else:
-        df.rename(columns={'ts_code': "symbol", "trade_date": "dt"}, inplace=True)
-
-    df.drop_duplicates(subset='dt', keep='first', inplace=True)
-    df.sort_values('dt', inplace=True)
-    df['dt'] = df.dt.apply(str)
-    if freq.endswith("min"):
-        # 清理 9:30 的空数据
-        df['not_start'] = df.dt.apply(lambda x: not x.endswith("09:30:00"))
-        df = df[df['not_start']]
-    if count:
-        df = df.tail(count)
-
-    df.reset_index(drop=True, inplace=True)
-    df.loc[:, "dt"] = pd.to_datetime(df['dt'])
-
-    k = df[['symbol', 'dt', 'open', 'close', 'high', 'low', 'vol']]
-
-    for col in ['open', 'close', 'high', 'low']:
-        k[col] = k[col].apply(round, args=(2,))
-
-    return k
-
-
-def download_kline(symbol, freq, start_date, end_date, delta, save=True):
-    """下载K线数据
-
-    :param save:
-    :param symbol:
-    :param end_date:
+    :param ts_code:
+    :param asset:
     :param freq:
     :param start_date:
-    :param delta:
+    :param end_date:
+    :param fq:
     :return:
-
-    >>> start_date = datetime.strptime("20200101", "%Y%m%d")
-    >>> end_date = datetime.strptime("20200719", "%Y%m%d")
-    >>> df = download_kline("000001.SH-I", "1min", start_date, end_date, delta=timedelta(days=10), save=False)
     """
-    data = []
-    end_dt = start_date + delta
-    print("开始下载数据：{} - {} - {}".format(symbol, start_date, end_date))
-    df_ = get_kline(symbol, start_date=start_date, end_date=end_dt, freq=freq)
-    if not df_.empty:
-        data.append(df_)
-
-    while end_dt < end_date:
-        df_ = get_kline(symbol, start_date=start_date, end_date=end_dt, freq=freq)
-        if not df_.empty:
-            data.append(df_)
-        start_date = end_dt
-        end_dt += delta
-        print("当前下载进度：{} - {} - {}".format(symbol, start_date, end_dt))
-
-    df = pd.concat(data, ignore_index=True)
-    print("{} 去重前K线数量为 {}".format(symbol, len(df)))
-    df.drop_duplicates(['dt'], inplace=True)
-    df.sort_values('dt', ascending=True, inplace=True)
-    df.reset_index(drop=True, inplace=True)
-    print("{} 去重后K线数量为 {}".format(symbol, len(df)))
-
-    if save:
-        df.to_csv(f"{symbol}_{freq}_{start_date.date()}_{end_date.date()}.csv", index=False, encoding="utf-8")
+    start_date = pd.to_datetime(start_date)
+    end_date = pd.to_datetime(end_date)
+    if "分钟" in freq.value:
+        start_date = start_date.strftime(dt_fmt)
+        end_date = end_date.strftime(dt_fmt)
     else:
-        return df
+        start_date = start_date.strftime(date_fmt)
+        end_date = end_date.strftime(date_fmt)
+
+    df = ts.pro_bar(ts_code=ts_code, adj=fq, asset=asset, freq=freq_map[freq],
+                    start_date=start_date, end_date=end_date)
+    bars = format_kline(df, freq)
+    if bars and bars[-1].dt < pd.to_datetime(end_date) and len(bars) == 8000:
+        print(f"获取K线数量达到8000根，数据获取到 {bars[-1].dt}，目标 end_date 为 {end_date}")
+    return bars

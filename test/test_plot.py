@@ -1,15 +1,10 @@
 # coding: utf-8
-import sys
-import warnings
-
-sys.path.insert(0, '.')
-sys.path.insert(0, '..')
-
 import os
 import pandas as pd
 import random
 from czsc.utils import echarts_plot as plot
-from czsc.analyze import KlineAnalyze
+from czsc.analyze import CZSC, RawBar
+from czsc.enum import Freq
 
 cur_path = os.path.split(os.path.realpath(__file__))[0]
 
@@ -20,23 +15,22 @@ def test_heat_map():
     x_label = ["{}hour".format(i) for i in range(24)]
     y_label = ["{}day".format(i) for i in range(7)]
     hm = plot.heat_map(data, x_label=x_label, y_label=y_label)
-    hm.render()
+    file_html = 'render.html'
+    hm.render(file_html)
+    assert os.path.exists(file_html)
+    os.remove(file_html)
 
 
 def test_kline_pro():
     file_kline = os.path.join(cur_path, "data/000001.SH_D.csv")
     kline = pd.read_csv(file_kline, encoding="utf-8")
-    bars = kline.to_dict("records")
-    ka = KlineAnalyze(bars)
-
-    bs = []
-    for x in ka.xd_list:
-        if x['fx_mark'] == 'd':
-            mark = "buy"
-        else:
-            mark = "sell"
-        bs.append({"dt": x['dt'], "mark": mark, mark: x['xd']})
-
-    chart = plot.kline_pro(ka.kline_raw, fx=ka.fx_list, bi=ka.bi_list, xd=ka.xd_list, bs=bs)
-    chart.render()
-
+    bars = [RawBar(symbol=row['symbol'], id=i, freq=Freq.D, open=row['open'], dt=row['dt'],
+                   close=row['close'], high=row['high'], low=row['low'], vol=row['vol'])
+            for i, row in kline.iterrows()]
+    ka = CZSC(bars)
+    # ka.open_in_browser()
+    file_html = 'czsc_render.html'
+    chart = ka.to_echarts()
+    chart.render(file_html)
+    assert os.path.exists(file_html)
+    os.remove(file_html)

@@ -1,18 +1,10 @@
 # coding: utf-8
-import sys
-import warnings
-
-sys.path.insert(0, '.')
-sys.path.insert(0, '..')
 import os
 import pandas as pd
 import numpy as np
 import czsc
 
-warnings.warn("czsc version is {}".format(czsc.__version__))
-
-# cur_path = os.path.split(os.path.realpath(__file__))[0]
-cur_path = "./test"
+cur_path = os.path.split(os.path.realpath(__file__))[0]
 file_kline = os.path.join(cur_path, "data/000001.SH_D.csv")
 kline = pd.read_csv(file_kline, encoding="utf-8")
 kline.loc[:, "dt"] = pd.to_datetime(kline.dt)
