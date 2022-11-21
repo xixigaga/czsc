@@ -162,6 +162,14 @@ def create_fake_bis(fxs: List[FX]) -> List[FakeBI]:
         fake_bis.append(fake_bi)
     return fake_bis
 
+@dataclass
+class XD:
+    symbol: str
+    fx_a: FX = None     # 线段开始的分型
+    fx_b: FX = None     # 线段结束的分型
+    fxs: List = None    # 线段内部的分型列表
+    direction: Direction = None
+    cache: dict = None  # cache 用户缓存
 
 @dataclass
 class BI:

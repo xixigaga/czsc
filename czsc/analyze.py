@@ -12,7 +12,7 @@ from loguru import logger
 from typing import List, Callable
 from collections import OrderedDict
 from czsc.enum import Mark, Direction
-from czsc.objects import BI, FX, RawBar, NewBar
+from czsc.objects import BI, FX, RawBar, NewBar , XD
 from czsc.utils.echarts_plot import kline_pro
 from czsc import envs
 
@@ -168,10 +168,37 @@ def check_bi(bars: List[NewBar], benchmark: float = None):
     else:
         return None, bars
 
+def get_potential_xd(bi_points):
+    """获取潜在线段标记点
+    :param bi_points: list of dict
+        笔标记点
+    :return: list of dict
+        潜在线段标记点
+    """
+    xd_p = []
+    bi_d = [x for x in bi_points if x.direction == Direction.Up]
+    bi_g = [x for x in bi_points if x.direction == Direction.Down]
+
+    for i in range(1, len(bi_d) - 1):
+        d1, d2, d3 = bi_d[i - 1: i + 2]
+        if d1.high > d2.high < d3.high:
+            d2.edt = d3.edt
+            d2.high = d3.high
+            xd_p.append(d2)
+    for j in range(1, len(bi_g) - 1):
+        g1, g2, g3 = bi_g[j - 1: j + 2]
+        if g1.low < g2.low > g3.low:
+            # d2.sdt=
+            # d2.high=
+            xd_p.append(g2)
+
+    xd_p = sorted(xd_p, key=lambda x: x.sdt, reverse=False)
+    return xd_p
 
 class CZSC:
     def __init__(self,
                  bars: List[RawBar],
+                 use_xd=False,
                  get_signals: Callable = None,
                  max_bi_num=envs.get_max_bi_num(),
                  ):
@@ -181,11 +208,13 @@ class CZSC:
         :param max_bi_num: 最大允许保留的笔数量
         :param get_signals: 自定义的信号计算函数
         """
+        self.use_xd = use_xd
         self.verbose = envs.get_verbose()
         self.max_bi_num = max_bi_num
         self.bars_raw: List[RawBar] = []  # 原始K线序列
         self.bars_ubi: List[NewBar] = []  # 未完成笔的无包含K线序列
         self.bi_list: List[BI] = []
+        self.xd_list: List[BI]  = []  #先使用原来的类，后续再改成新的定义
         self.symbol = bars[0].symbol
         self.freq = bars[0].freq
         self.get_signals = get_signals
@@ -193,6 +222,62 @@ class CZSC:
 
         for bar in bars:
             self.update(bar)
+
+        if self.use_xd:
+            self._update_xd_list()
+
+    def _update_xd_list(self):
+        """更新线段序列
+
+        线段标记对象样例：
+         {'dt': Timestamp('2020-07-09 00:00:00'),
+          'fx_mark': 'g',
+          'start_dt': Timestamp('2020-07-08 00:00:00'),
+          'end_dt': Timestamp('2020-07-14 00:00:00'),
+          'fx_high': 187.99,
+          'fx_low': 163.12,
+          'xd': 187.99}
+
+         {'dt': Timestamp('2020-11-02 00:00:00'),
+          'fx_mark': 'd',
+          'start_dt': Timestamp('2020-10-29 00:00:00'),
+          'end_dt': Timestamp('2020-11-03 00:00:00'),
+          'fx_high': 142.38,
+          'fx_low': 135.0,
+          'xd': 135.0}
+        """
+        if len(self.bi_list) < 4:
+            return
+
+        if len(self.xd_list) == 0:
+            for i in range(3):
+                xd = self.bi_list[i]
+                self.xd_list.append(xd)
+        # self.bi_list[-1].high
+        right_bi = [x for x in self.bi_list if x.sdt >= self.xd_list[-1].sdt]
+
+        xd_p = get_potential_xd(right_bi)
+        for xp in xd_p:
+            xd = dict(xp)
+            last_xd = self.xd_list[-1]
+            if last_xd['fx_mark'] == xd['fx_mark']:
+                if (last_xd['fx_mark'] == 'd' and last_xd['xd'] > xd['xd']) \
+                        or (last_xd['fx_mark'] == 'g' and last_xd['xd'] < xd['xd']):
+                    if self.verbose:
+                        print("更新线段标记：from {} to {}".format(last_xd, xd))
+                    self.xd_list[-1] = xd
+            else:
+                if (last_xd['fx_mark'] == 'd' and last_xd['xd'] > xd['xd']) \
+                        or (last_xd['fx_mark'] == 'g' and last_xd['xd'] < xd['xd']):
+                    continue
+
+                bi_inside = [x for x in right_bi if last_xd['dt'] <= x['dt'] <= xd['dt']]
+                if len(bi_inside) < 4:
+                    if self.verbose:
+                        print("{} - {} 之间笔标记数量少于4，跳过".format(last_xd['dt'], xd['dt']))
+                    continue
+                else:
+                    self.xd_list.append(xd)
 
     def __repr__(self):
         return "<CZSC~{}~{}>".format(self.symbol, self.freq.value)
