@@ -3,7 +3,9 @@ from collections import OrderedDict
 from .analyze import KlineAnalyze
 
 def find_zs(points):
-    """输入笔或线段标记点，输出中枢识别结果"""
+    """输入笔或线段标记点，输出中枢识别结果
+    Todo 三笔重叠区域就可以构成中枢，其中13.86~15 为什么没有形成需要验证！！！ 
+    """
     if len(points) < 5:
         return []
 
@@ -45,8 +47,11 @@ def find_zs(points):
             zs_xd.append(k_xd[i])
             continue
         xd_p = k_xd[i]
-        zs_d = max([x['xd'] for x in zs_xd[:4] if x['fx_mark'] == 'd'])
-        zs_g = min([x['xd'] for x in zs_xd[:4] if x['fx_mark'] == 'g'])
+        # 原计算内容
+        # zs_d = max([x['xd'] for x in zs_xd[:4] if x['fx_mark'] == 'd'])
+        # zs_g = min([x['xd'] for x in zs_xd[:4] if x['fx_mark'] == 'g'])
+        zs_d = max([x['xd'] for x in zs_xd if x['fx_mark'] == 'd']) #取高低
+        zs_g = min([x['xd'] for x in zs_xd if x['fx_mark'] == 'g']) #取低高
         if zs_g <= zs_d:
             zs_xd.append(k_xd[i])
             zs_xd.pop(0)
@@ -70,7 +75,10 @@ def find_zs(points):
                 "points": zs_xd,
                 "third_buy": xd_p
             })
-            zs_xd = []
+            # zs_xd = []
+            # 从上次的最后两个笔或线段开始
+            zs_xd.append(k_xd[i]) #补充当前这笔数据,供下一中枢使用
+            zs_xd = zs_xd[-2:]
         elif xd_p['fx_mark'] == "g" and xd_p['xd'] < zs_d:
             zn_points = zs_xd[3:]
             # 线段在中枢下方结束，形成三卖
@@ -87,13 +95,19 @@ def find_zs(points):
                 "zn": __get_zn(zn_points),
                 "third_sell": xd_p
             })
-            zs_xd = []
+            # zs_xd = []
+            # 从上次的最后两个笔或线段开始
+            zs_xd.append(k_xd[i])#补充当前这笔数据,供下一中枢使用
+            zs_xd = zs_xd[-2:]
         else:
             zs_xd.append(xd_p)
 
     if len(zs_xd) >= 5:
-        zs_d = max([x['xd'] for x in zs_xd[:4] if x['fx_mark'] == 'd'])
-        zs_g = min([x['xd'] for x in zs_xd[:4] if x['fx_mark'] == 'g'])
+        # zs_d = max([x['xd'] for x in zs_xd[:4] if x['fx_mark'] == 'd'])
+        # zs_g = min([x['xd'] for x in zs_xd[:4] if x['fx_mark'] == 'g'])
+        # 补充最后一个中枢的结果
+        zs_d = max([x['xd'] for x in zs_xd if x['fx_mark'] == 'd']) #取高低
+        zs_g = min([x['xd'] for x in zs_xd if x['fx_mark'] == 'g']) #取低高
         if zs_g > zs_d:
             zn_points = zs_xd[3:]
             k_zs.append({
