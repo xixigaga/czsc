@@ -1,7 +1,8 @@
 # coding: utf-8
 from collections import OrderedDict
-from .analyze import KlineAnalyze
-
+from .analyze import KlineAnalyze,ta
+import talib
+import numpy as np
 def find_zs(points):
     """输入笔或线段标记点，输出中枢识别结果
     Todo 三笔重叠区域就可以构成中枢，其中13.86~15 为什么没有形成需要验证！！！ 
@@ -60,7 +61,7 @@ def find_zs(points):
         # 定义四个指标,GG=max(gn),G=min(gn),D=max(dn),DD=min(dn)，n遍历中枢中所有Zn。
         # 定义ZG=min(g1、g2), ZD=max(d1、d2)，显然，[ZD，ZG]就是缠中说禅走势中枢的区间
         if xd_p['fx_mark'] == "d" and xd_p['xd'] > zs_g:
-            zn_points = zs_xd[3:]
+            zn_points = zs_xd[1:]
             # 线段在中枢上方结束，形成三买
             k_zs.append({
                 'ZD': zs_d,
@@ -69,18 +70,18 @@ def find_zs(points):
                 'GG': max([x['xd'] for x in zs_xd if x['fx_mark'] == 'g']),
                 'D': max([x['xd'] for x in zs_xd if x['fx_mark'] == 'd']),
                 'DD': min([x['xd'] for x in zs_xd if x['fx_mark'] == 'd']),
-                'start_point': zs_xd[1],
-                'end_point': zs_xd[-2],
-                "zn": __get_zn(zn_points),
+                'start_point': zs_xd[0],# 进入段时间区间
+                'end_point': zs_xd[-2],# 可能出现的背离段时间区间
+                "zn": __get_zn(zn_points),# 包含中枢的方向
                 "points": zs_xd,
-                "third_buy": xd_p
+                "third_buy": xd_p,
             })
             # zs_xd = []
             # 从上次的最后两个笔或线段开始
             zs_xd.append(k_xd[i]) #补充当前这笔数据,供下一中枢使用
             zs_xd = zs_xd[-2:]
         elif xd_p['fx_mark'] == "g" and xd_p['xd'] < zs_d:
-            zn_points = zs_xd[3:]
+            zn_points = zs_xd[1:]
             # 线段在中枢下方结束，形成三卖
             k_zs.append({
                 'ZD': zs_d,
@@ -89,11 +90,11 @@ def find_zs(points):
                 'GG': max([x['xd'] for x in zs_xd if x['fx_mark'] == 'g']),
                 'D': max([x['xd'] for x in zs_xd if x['fx_mark'] == 'd']),
                 'DD': min([x['xd'] for x in zs_xd if x['fx_mark'] == 'd']),
-                'start_point': zs_xd[1],
+                'start_point': zs_xd[0],
                 'end_point': zs_xd[-2],
                 "points": zs_xd,
-                "zn": __get_zn(zn_points),
-                "third_sell": xd_p
+                "zn": __get_zn(zn_points),# 包含中枢的方向
+                "third_sell": xd_p,
             })
             # zs_xd = []
             # 从上次的最后两个笔或线段开始
@@ -102,14 +103,14 @@ def find_zs(points):
         else:
             zs_xd.append(xd_p)
 
-    if len(zs_xd) >= 5:
+    if len(zs_xd) >= 5:# 补充最后一个中枢的结果
         # zs_d = max([x['xd'] for x in zs_xd[:4] if x['fx_mark'] == 'd'])
         # zs_g = min([x['xd'] for x in zs_xd[:4] if x['fx_mark'] == 'g'])
-        # 补充最后一个中枢的结果
+        # todo 这里的方向需要再次确认一下！！！！！！！！！
         zs_d = max([x['xd'] for x in zs_xd if x['fx_mark'] == 'd']) #取高低
         zs_g = min([x['xd'] for x in zs_xd if x['fx_mark'] == 'g']) #取低高
         if zs_g > zs_d:
-            zn_points = zs_xd[3:]
+            zn_points = zs_xd[1:]
             k_zs.append({
                 'ZD': zs_d,
                 "ZG": zs_g,
@@ -117,12 +118,65 @@ def find_zs(points):
                 'GG': max([x['xd'] for x in zs_xd if x['fx_mark'] == 'g']),
                 'D': max([x['xd'] for x in zs_xd if x['fx_mark'] == 'd']),
                 'DD': min([x['xd'] for x in zs_xd if x['fx_mark'] == 'd']),
-                'start_point': zs_xd[1],
-                'end_point': None,
-                "zn": __get_zn(zn_points),
+                'start_point': zs_xd[0],
+                'end_point': None, # 尚未确认的一笔，如果小于3笔，就不是中枢！待详细验证一下
+                "zn": __get_zn(zn_points),# 包含中枢的方向
                 "points": zs_xd,
             })
     return k_zs
+
+def findLast2bi(zs,fre='day'):
+    bi2List = [''] 
+    '''
+    1、确认zs的方向
+        11、同方向的可比较
+        12、不同方向的
+    2、
+    '''
+    for j in zs: #找出近2个中枢对应的线段及数值
+        bi2List.append(j['start_point']['dt'])
+        if j['end_point']:
+            bi2List.append(j['end_point']['fx_mark'])
+            bi2List.append(j['end_point']['dt'])
+        else:
+            bi2List.append('g' if j['zn'][0]['direction']=='down' else 'd')
+            bi2List.append(j['points'][-2]['dt'])
+        # if j['end_point']:#非空则是-3~-2 日期成对出现
+            # bi2List.append(j['end_point']['fx_mark'])
+            # bi2List.append(j['start_point']['dt'])
+            # bi2List.append(j['end_point']['fx_mark'])
+            # bi2List.append(j['end_point']['dt'])
+        # else:#空 则是-2~-1
+        #     bi2List.append(j['zn'][0]['direction'])
+        #     bi2List.append(j['points'][-2]['dt'])
+            # bi2List.append(j['points'][-1]['dt'])
+    return bi2List
+
+def single_Check(kdata,zs):
+    '''
+    kdata k线
+    zs 中枢list
+    bilist 笔list
+    '''
+    kdata = kdata.set_index(['dt'], drop=True)
+    diff, dea, macd = talib.MACD(kdata['close'], fastperiod=12, slowperiod=26, signalperiod=9)
+
+    fre = 'day' if str(kdata.index[0])[-8:]=='00:00:00' else '60m'
+    last2bi = findLast2bi(zs,fre) # last2bi [方向，笔开始时间，笔结束时间]
+    beichiVal=[]
+    for i in range(2,len(last2bi),3):
+        #判断方向
+        if i+2<len(last2bi):#已完成笔
+            if last2bi[i]=='g':
+                beichiVal.append(np.sum(macd[(last2bi[i+1]<macd.index) &(last2bi[i+2]>macd.index)&(macd<0)]))
+            else:
+                beichiVal.append(np.sum(macd[(last2bi[i+1]<macd.index) &(last2bi[i+2]>macd.index)&(macd>0)]))
+        else:#继续延伸
+            if last2bi[i]=='g':
+                beichiVal.append(np.sum(macd[(last2bi[i+1]<macd.index) &(macd<0)]))
+            else:
+                beichiVal.append(np.sum(macd[(last2bi[i+1]<macd.index) &(macd>0)]))
+    return beichiVal
 
 def check_jing(fd1, fd2, fd3, fd4, fd5) -> str:
     """检查最近5个分段走势是否构成井

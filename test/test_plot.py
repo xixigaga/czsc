@@ -10,7 +10,7 @@ import pandas as pd
 import random
 from czsc.utils import echarts_plot as plot
 from czsc.analyze import KlineAnalyze
-from czsc.signals import find_zs
+from czsc.signals import find_zs,single_Check
 import QUANTAXIS as QA
 
 cur_path = os.path.split(os.path.realpath(__file__))[0]
@@ -42,26 +42,27 @@ def test_kline_pro():
     chart.render()
 
 def qaCzsc():
-    # file_kline = os.path.join(cur_path, "data/000001.SH_D.csv")
-    # kline = pd.read_csv(file_kline, encoding="utf-8")
-
-    te = QA.QA_fetch_stock_day_adv('000001','2022-01-01','2022-11-02').to_qfq()
-    bars = te.data.reset_index()
+    te = QA.QA_fetch_stock_day_adv('000001','2022-01-01','2022-10-30').to_qfq()
+    bars = te.data.round(2).reset_index()
     bars.rename(columns={'code': 'symbol', 'date': 'dt'}, inplace=True)
 
-    ka = KlineAnalyze(bars,use_xd=True,)
+    ka = KlineAnalyze(bars,)
     zslist = find_zs(ka.bi_list)
+    xd_zslist2 = single_Check(bars,zslist) #找出最近
+    # 日线出现背驰
+    # 查看分钟线是否也背驰并且结束
     '''
     当下处于中枢最后一笔
     获取次级别中枢前一笔+中枢+最后一笔
     '''
-    min60 = QA.QA_fetch_stock_min_adv('000001','2022-07-05','2022-11-01',frequence='60min').to_qfq()
-    min_bars = min60.data.reset_index()
-    min_bars.rename(columns={'code': 'symbol', 'date': 'dt'}, inplace=True)
+    min60 = QA.QA_fetch_stock_min_adv('000001','2022-06-05','2022-11-01',frequence='60min').to_qfq()
+    min_bars = min60.data.round(2).reset_index()
+    min_bars.rename(columns={'code': 'symbol', 'datetime': 'dt'}, inplace=True)
 
-    min_ka = KlineAnalyze(min_bars)
-    min_zslist = find_zs(min_ka.bi_list) #获取中枢 用以计算最后次级别的时间长度
-    return min_zslist
+    min_ka = KlineAnalyze(min_bars,use_xd=True,) # 次级别需要合并笔
+    bi_zslist = find_zs(min_ka.bi_list) #获取中枢 用以计算最后次级别的时间长度 看局部中枢背离也可以
+    xd_zslist2 = single_Check(min_bars,bi_zslist)
+    return bi_zslist
 
 if __name__ == '__main__':
     qaCzsc()
