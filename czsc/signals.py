@@ -3,6 +3,7 @@ from collections import OrderedDict
 from .analyze import KlineAnalyze,ta
 import talib
 import numpy as np
+
 def find_zs(points):
     """输入笔或线段标记点，输出中枢识别结果
     Todo 三笔重叠区域就可以构成中枢，其中13.86~15 为什么没有形成需要验证！！！ 
@@ -157,6 +158,7 @@ def single_Check(kdata,zs):
     kdata k线
     zs 中枢list
     bilist 笔list
+    在背驰段比较容易出现盘背现象,需要添加对盘背验证逻辑
     '''
     kdata = kdata.set_index(['dt'], drop=True)
     diff, dea, macd = talib.MACD(kdata['close'], fastperiod=12, slowperiod=26, signalperiod=9)
