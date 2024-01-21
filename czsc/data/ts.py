@@ -14,9 +14,8 @@ from datetime import datetime
 from typing import List
 from functools import partial
 from loguru import logger
-
-from ..analyze import RawBar
-from ..enum import Freq
+from tenacity import retry, stop_after_attempt, wait_random
+from czsc.objects import RawBar, Freq
 
 
 # 数据频度 ：支持分钟(min)/日(D)/周(W)/月(M)K线，其中1min表示1分钟（类推1/5/15/30/60分钟）。
@@ -25,18 +24,6 @@ freq_map = {Freq.F1: "1min", Freq.F5: '5min', Freq.F15: "15min", Freq.F30: '30mi
             Freq.F60: "60min", Freq.D: 'D', Freq.W: "W", Freq.M: "M"}
 freq_cn_map = {"1分钟": Freq.F1, "5分钟": Freq.F5, "15分钟": Freq.F15, "30分钟": Freq.F30,
                "60分钟": Freq.F60, "日线": Freq.D}
-exchanges = {
-    "SSE": "上交所",
-    "SZSE": "深交所",
-    "CFFEX": "中金所",
-    "SHFE": "上期所",
-    "CZCE": "郑商所",
-    "DCE": "大商所",
-    "INE": "能源",
-    "IB": "银行间",
-    "XHKG": "港交所"
-}
-
 dt_fmt = "%Y-%m-%d %H:%M:%S"
 date_fmt = "%Y%m%d"
 
@@ -55,6 +42,7 @@ class TushareProApi:
         self.__token = token
         self.__timeout = timeout
 
+    @retry(stop=stop_after_attempt(10), wait=wait_random(1, 5))
     def query(self, api_name, fields='', **kwargs):
         if api_name in ['__getstate__', '__setstate__']:
             return pd.DataFrame()
@@ -91,6 +79,7 @@ except:
     print("Tushare Pro 初始化失败")
 
 
+@deprecated(reason="统一到 ts_connector 中", version='1.0.0')
 def format_kline(kline: pd.DataFrame, freq: Freq) -> List[RawBar]:
     """Tushare K线数据转换
 
@@ -105,10 +94,10 @@ def format_kline(kline: pd.DataFrame, freq: Freq) -> List[RawBar]:
 
     for i, record in enumerate(records):
         if freq == Freq.D:
-            vol = int(record['vol']*100)
-            amount = int(record.get('amount', 0)*1000)
+            vol = int(record['vol'] * 100) if record['vol'] > 0 else 0
+            amount = int(record.get('amount', 0) * 1000)
         else:
-            vol = int(record['vol'])
+            vol = int(record['vol']) if record['vol'] > 0 else 0
             amount = int(record.get('amount', 0))
 
         # 将每一根K线转换成 RawBar 对象

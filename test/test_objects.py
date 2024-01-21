@@ -1,10 +1,9 @@
 # coding: utf-8
-import pandas as pd
 import numpy as np
 from collections import OrderedDict
 from czsc.utils import x_round
-from czsc.objects import Signal, Factor, Event, Freq, Operate, PositionLong, PositionShort
-from czsc.objects import cal_break_even_point, RawBar
+from czsc.objects import Signal, Factor, Event, Freq, Operate
+from czsc.objects import cal_break_even_point
 
 
 def test_raw_bar():
@@ -15,7 +14,7 @@ def test_raw_bar():
     key = "SMA5"
 
     # 技术指标的全部更新
-    for i in range(1, len(bars)+1):
+    for i in range(1, len(bars) + 1):
         c = dict(bars[-i].cache) if bars[-i].cache else dict()
         c.update({key: ma[-i]})
         bars[-i].cache = c
@@ -27,6 +26,22 @@ def test_raw_bar():
         c.update({key: ma[-i] + 2})
         bars[-i].cache = c
     assert np.array([x.cache[key] for x in bars]).sum() == ma.sum() + 200
+
+
+def test_zs():
+    """测试中枢对象"""
+    from test.test_analyze import read_daily
+    from czsc.objects import ZS
+    from czsc.analyze import CZSC
+    bars = read_daily()
+    c = CZSC(bars)
+
+    zs = ZS(c.bi_list[-5:])
+    assert zs.zd < zs.zg
+    assert zs.is_valid
+
+    zs = ZS(c.bi_list[-8:-3])
+    assert not zs.is_valid
 
 
 def test_cal_break_even_point():
@@ -84,6 +99,10 @@ def test_factor():
         ]
     )
     assert factor.is_match(s)
+
+    factor_raw = factor.dump()
+    new_factor = Factor.load(factor_raw)
+    assert new_factor.is_match(s)
 
     factor = Factor(
         name="单测",
@@ -146,6 +165,26 @@ def test_event():
         Signal(k1=str(freq.value), k2="倒0笔", k3="方向", v1="向上", v2='其他', v3='其他'),
     ])
     m, f = event.is_match(s)
+    assert m and f
+
+    raw = event.dump()
+    new_event = Event.load(raw)
+    m, f = new_event.is_match(s)
+    assert m and f
+
+    raw1 = {'name': '单测',
+            'operate': '开多',
+            'signals_all': ['15分钟_倒0笔_方向_向上_其他_其他_0'],
+            'factors': [{'name': '测试', 'signals_all': ['15分钟_倒0笔_长度_大于5_其他_其他_0']}]}
+    new_event = Event.load(raw1)
+    m, f = new_event.is_match(s)
+    assert m and f
+
+    raw1 = {'operate': '开多',
+            'signals_all': ['15分钟_倒0笔_方向_向上_其他_其他_0'],
+            'factors': [{'name': '测试', 'signals_all': ['15分钟_倒0笔_长度_大于5_其他_其他_0']}]}
+    new_event = Event.load(raw1)
+    m, f = new_event.is_match(s)
     assert m and f
 
     event = Event(name="单测", operate=Operate.LO,
@@ -216,246 +255,26 @@ def test_event():
     m, f = event.is_match(s)
     assert not m and not f
 
-
-def test_position_long():
-    pos_long = PositionLong(symbol="000001.XSHG")
-    pos_long.update(dt=pd.to_datetime('2021-01-01'), op=Operate.HO, price=100, bid=0)
-    assert not pos_long.pos_changed and pos_long.pos == 0
-
-    pos_long.update(dt=pd.to_datetime('2021-01-02'), op=Operate.LO, price=100, bid=1, op_desc="首次开仓测试")
-    assert pos_long.pos_changed and pos_long.pos == 0.5
-
-    pos_long.update(dt=pd.to_datetime('2021-01-03'), op=Operate.LO, price=100, bid=2, op_desc="首次开仓测试")
-    assert not pos_long.pos_changed and pos_long.pos == 0.5
-
-    pos_long.update(dt=pd.to_datetime('2021-01-04'), op=Operate.LA1, price=100, bid=3)
-    assert pos_long.pos_changed and pos_long.pos == 0.8
-
-    pos_long.update(dt=pd.to_datetime('2021-01-05'), op=Operate.LA1, price=100, bid=4)
-    assert not pos_long.pos_changed and pos_long.pos == 0.8
-
-    pos_long.update(dt=pd.to_datetime('2021-01-06'), op=Operate.LA2, price=100, bid=5)
-    assert pos_long.pos_changed and pos_long.pos == 1
-
-    pos_long.update(dt=pd.to_datetime('2021-01-07'), op=Operate.LR1, price=100, bid=6)
-    assert pos_long.pos_changed and pos_long.pos == 0.8
-
-    pos_long.update(dt=pd.to_datetime('2021-01-08'), op=Operate.LR2, price=100, bid=7)
-    assert pos_long.pos_changed and pos_long.pos == 0.5
-
-    pos_long.update(dt=pd.to_datetime('2021-01-08'), op=Operate.LR2, price=100, bid=7)
-    assert not pos_long.pos_changed and pos_long.pos == 0.5
-
-    pos_long.update(dt=pd.to_datetime('2021-01-09'), op=Operate.LA2, price=100, bid=8)
-    assert not pos_long.pos_changed and pos_long.pos == 0.5
-
-    pos_long.update(dt=pd.to_datetime('2021-01-10'), op=Operate.LA1, price=100, bid=9)
-    assert pos_long.pos_changed and pos_long.pos == 0.8
-
-    pos_long.update(dt=pd.to_datetime('2021-01-11'), op=Operate.LE, price=100, bid=10)
-    assert pos_long.pos_changed and pos_long.pos == 0
-    assert len(pos_long.pairs) == 1
-    assert pos_long.pairs[0]['持仓天数'] == 9
-    pos_long.evaluate_operates()
-
-
-def test_position_long_t0():
-    """测试T0逻辑"""
-    pos_long = PositionLong(symbol="000001.XSHG", T0=False)
-    pos_long.update(dt=pd.to_datetime('2021-01-01'), op=Operate.HO, price=100, bid=0)
-    assert not pos_long.pos_changed and pos_long.pos == 0
-
-    pos_long.update(dt=pd.to_datetime('2021-01-02'), op=Operate.LO, price=100, bid=1, op_desc="首次开仓测试")
-    assert pos_long.pos_changed and pos_long.pos == 0.5
-
-    pos_long.update(dt=pd.to_datetime('2021-01-02'), op=Operate.LA1, price=100, bid=3)
-    assert pos_long.pos_changed and pos_long.pos == 0.8
-
-    pos_long.update(dt=pd.to_datetime('2021-01-02'), op=Operate.LA2, price=100, bid=5)
-    assert pos_long.pos_changed and pos_long.pos == 1
-
-    # T0 平仓信号不生效
-    pos_long.update(dt=pd.to_datetime('2021-01-02'), op=Operate.LE, price=100, bid=8)
-    assert not pos_long.pos_changed and pos_long.pos == 1
-
-    pos_long.update(dt=pd.to_datetime('2021-01-03'), op=Operate.LE, price=100, bid=10)
-    assert pos_long.pos_changed and pos_long.pos == 0
-
-    try:
-        pos_long.update(dt=pd.to_datetime('2021-01-03'), op=Operate.SO, price=100, bid=11)
-    except AssertionError as e:
-        print(e)
-
-    assert len(pos_long.pairs) == 1
-    pos_long.evaluate_operates()
-
-
-def test_position_long_min_interval():
-    """测试T0逻辑"""
-    pos_long = PositionLong(symbol="000001.XSHG", T0=False, long_min_interval=3600 * 72)
-
-    pos_long.update(dt=pd.to_datetime('2021-01-01'), op=Operate.HO, price=100, bid=0)
-    assert not pos_long.pos_changed and pos_long.pos == 0
-
-    pos_long.update(dt=pd.to_datetime('2021-01-02'), op=Operate.LO, price=100, bid=1, op_desc="首次开仓测试")
-    assert pos_long.pos_changed and pos_long.pos == 0.5
-
-    pos_long.update(dt=pd.to_datetime('2021-01-02'), op=Operate.LA1, price=100, bid=3)
-    assert pos_long.pos_changed and pos_long.pos == 0.8
-
-    pos_long.update(dt=pd.to_datetime('2021-01-02'), op=Operate.LA2, price=100, bid=5)
-    assert pos_long.pos_changed and pos_long.pos == 1
-
-    # T0 平仓信号不生效
-    pos_long.update(dt=pd.to_datetime('2021-01-02'), op=Operate.LE, price=100, bid=8)
-    assert not pos_long.pos_changed and pos_long.pos == 1
-
-    pos_long.update(dt=pd.to_datetime('2021-01-03'), op=Operate.LE, price=100, bid=10)
-    assert pos_long.pos_changed and pos_long.pos == 0
-
-    assert len(pos_long.pairs) == 1
-
-    pos_long.update(dt=pd.to_datetime('2021-01-04'), op=Operate.LE, price=100, bid=11)
-    assert not pos_long.pos_changed and pos_long.pos == 0
-
-    # 测试最小开仓间隔
-    pos_long.update(dt=pd.to_datetime('2021-01-04'), op=Operate.LO, price=100, bid=12, op_desc="第二次开仓测试")
-    assert not pos_long.pos_changed and pos_long.pos == 0
-
-    pos_long.update(dt=pd.to_datetime('2021-01-05'), op=Operate.LO, price=100, bid=13, op_desc="第二次开仓测试")
-    assert not pos_long.pos_changed and pos_long.pos == 0
-
-    pos_long.update(dt=pd.to_datetime('2021-01-06'), op=Operate.LO, price=100, bid=14, op_desc="第二次开仓测试")
-    assert pos_long.pos_changed and pos_long.pos == 0.5
-
-    pos_long.update(dt=pd.to_datetime('2021-01-09'), op=Operate.LA1, price=100, bid=15)
-    assert pos_long.pos_changed and pos_long.pos == 0.8
-
-    pos_long.update(dt=pd.to_datetime('2021-01-10'), op=Operate.LA2, price=100, bid=16)
-    assert pos_long.pos_changed and pos_long.pos == 1
-
-    assert len(pos_long.pairs) == 1
-
-    print(pos_long.evaluate_operates())
-
-
-def test_position_short():
-    pos_short = PositionShort(symbol="000001.XSHG")
-    pos_short.update(dt=pd.to_datetime('2021-01-01'), op=Operate.HO, price=100, bid=0)
-    assert not pos_short.pos_changed and pos_short.pos == 0
-
-    pos_short.update(dt=pd.to_datetime('2021-01-02'), op=Operate.SO, price=100, bid=1, op_desc="首次开仓测试")
-    assert pos_short.pos_changed and pos_short.pos == 0.5
-
-    pos_short.update(dt=pd.to_datetime('2021-01-03'), op=Operate.SO, price=100, bid=2, op_desc="首次开仓测试")
-    assert not pos_short.pos_changed and pos_short.pos == 0.5
-
-    pos_short.update(dt=pd.to_datetime('2021-01-04'), op=Operate.SA1, price=100, bid=3)
-    assert pos_short.pos_changed and pos_short.pos == 0.8
-
-    pos_short.update(dt=pd.to_datetime('2021-01-05'), op=Operate.SA1, price=100, bid=4)
-    assert not pos_short.pos_changed and pos_short.pos == 0.8
-
-    pos_short.update(dt=pd.to_datetime('2021-01-06'), op=Operate.SA2, price=100, bid=5)
-    assert pos_short.pos_changed and pos_short.pos == 1
-
-    pos_short.update(dt=pd.to_datetime('2021-01-07'), op=Operate.SR1, price=100, bid=6)
-    assert pos_short.pos_changed and pos_short.pos == 0.8
-
-    pos_short.update(dt=pd.to_datetime('2021-01-08'), op=Operate.SR2, price=100, bid=7)
-    assert pos_short.pos_changed and pos_short.pos == 0.5
-
-    pos_short.update(dt=pd.to_datetime('2021-01-08'), op=Operate.SR2, price=100, bid=7)
-    assert not pos_short.pos_changed and pos_short.pos == 0.5
-
-    pos_short.update(dt=pd.to_datetime('2021-01-09'), op=Operate.SA2, price=100, bid=8)
-    assert not pos_short.pos_changed and pos_short.pos == 0.5
-
-    pos_short.update(dt=pd.to_datetime('2021-01-10'), op=Operate.SA1, price=100, bid=9)
-    assert pos_short.pos_changed and pos_short.pos == 0.8
-
-    pos_short.update(dt=pd.to_datetime('2021-01-11'), op=Operate.SE, price=100, bid=10)
-    assert pos_short.pos_changed and pos_short.pos == 0
-    assert len(pos_short.pairs) == 1
-    assert pos_short.pairs[0]['持仓天数'] == 9
-    pos_short.evaluate_operates()
-
-
-def test_position_short_t0():
-    """测试T0逻辑"""
-    pos_short = PositionShort(symbol="000001.XSHG", T0=False)
-    pos_short.update(dt=pd.to_datetime('2021-01-01'), op=Operate.HO, price=100, bid=0)
-    assert not pos_short.pos_changed and pos_short.pos == 0
-
-    pos_short.update(dt=pd.to_datetime('2021-01-02'), op=Operate.SO, price=100, bid=1, op_desc="首次开仓测试")
-    assert pos_short.pos_changed and pos_short.pos == 0.5
-
-    pos_short.update(dt=pd.to_datetime('2021-01-02'), op=Operate.SA1, price=100, bid=3)
-    assert pos_short.pos_changed and pos_short.pos == 0.8
-
-    pos_short.update(dt=pd.to_datetime('2021-01-02'), op=Operate.SA2, price=100, bid=5)
-    assert pos_short.pos_changed and pos_short.pos == 1
-
-    # T0 平仓信号不生效
-    pos_short.update(dt=pd.to_datetime('2021-01-02'), op=Operate.SE, price=100, bid=8)
-    assert not pos_short.pos_changed and pos_short.pos == 1
-
-    pos_short.update(dt=pd.to_datetime('2021-01-03'), op=Operate.SE, price=100, bid=10)
-    assert pos_short.pos_changed and pos_short.pos == 0
-
-    try:
-        pos_short.update(dt=pd.to_datetime('2021-01-03'), op=Operate.LO, price=100, bid=11)
-    except AssertionError as e:
-        print(e)
-
-    assert len(pos_short.pairs) == 1
-    pos_short.evaluate_operates()
-
-
-def test_position_short_min_interval():
-    """测试T0逻辑"""
-    pos_short = PositionShort(symbol="000001.XSHG", T0=False, short_min_interval=3600 * 72)
-
-    pos_short.update(dt=pd.to_datetime('2021-01-01'), op=Operate.HO, price=100, bid=0)
-    assert not pos_short.pos_changed and pos_short.pos == 0
-
-    pos_short.update(dt=pd.to_datetime('2021-01-02'), op=Operate.SO, price=100, bid=1, op_desc="首次开仓测试")
-    assert pos_short.pos_changed and pos_short.pos == 0.5
-
-    pos_short.update(dt=pd.to_datetime('2021-01-02'), op=Operate.SA1, price=100, bid=3)
-    assert pos_short.pos_changed and pos_short.pos == 0.8
-
-    pos_short.update(dt=pd.to_datetime('2021-01-02'), op=Operate.SA2, price=100, bid=5)
-    assert pos_short.pos_changed and pos_short.pos == 1
-
-    # T0 平仓信号不生效
-    pos_short.update(dt=pd.to_datetime('2021-01-02'), op=Operate.SE, price=100, bid=8)
-    assert not pos_short.pos_changed and pos_short.pos == 1
-
-    pos_short.update(dt=pd.to_datetime('2021-01-03'), op=Operate.SE, price=100, bid=10)
-    assert pos_short.pos_changed and pos_short.pos == 0
-
-    assert len(pos_short.pairs) == 1
-
-    pos_short.update(dt=pd.to_datetime('2021-01-04'), op=Operate.SE, price=100, bid=11)
-    assert not pos_short.pos_changed and pos_short.pos == 0
-
-    # 测试最小开仓间隔
-    pos_short.update(dt=pd.to_datetime('2021-01-04'), op=Operate.SO, price=100, bid=12, op_desc="第二次开仓测试")
-    assert not pos_short.pos_changed and pos_short.pos == 0
-
-    pos_short.update(dt=pd.to_datetime('2021-01-05'), op=Operate.SO, price=100, bid=13, op_desc="第二次开仓测试")
-    assert not pos_short.pos_changed and pos_short.pos == 0
-
-    pos_short.update(dt=pd.to_datetime('2021-01-06'), op=Operate.SO, price=100, bid=14, op_desc="第二次开仓测试")
-    assert pos_short.pos_changed and pos_short.pos == 0.5
-
-    pos_short.update(dt=pd.to_datetime('2021-01-09'), op=Operate.SA1, price=100, bid=15)
-    assert pos_short.pos_changed and pos_short.pos == 0.8
-
-    pos_short.update(dt=pd.to_datetime('2021-01-10'), op=Operate.SA2, price=100, bid=16)
-    assert pos_short.pos_changed and pos_short.pos == 1
-
-    assert len(pos_short.pairs) == 1
-
-    print(pos_short.evaluate_operates())
+    event = Event.load(
+        {
+            "name": "开多",
+            "operate": "开多",
+            "signals_all": [
+                "1分钟_D1_涨跌停V230331_任意_任意_任意_0",
+                "1分钟_D0停顿分型_BE辅助V230106_看空_强_任意_0"
+            ],
+            "signals_any": [],
+            "signals_not": [],
+            "factors": [
+                {
+                    "name": "SMA#40多头",
+                    "signals_all": [
+                        "5分钟_D1#SMA#40MO10_BS辅助V230313_看多_任意_任意_0"
+                    ],
+                    "signals_any": [],
+                    "signals_not": []
+                }
+            ]
+        }
+    )
+    assert len(event.get_signals_config()) == 3

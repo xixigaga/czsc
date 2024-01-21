@@ -8,12 +8,18 @@ Tushare 数据缓存，这是用pickle缓存数据，是临时性的缓存。
 单次缓存，多次使用，但是不做增量更新，适用于研究场景。
 数据缓存是一种用空间换时间的方法，需要有较大磁盘空间，跑全市场至少需要50GB以上。
 """
+import time
 import os.path
 import shutil
-from czsc.data.ts import *
-from datetime import timedelta
+import pandas as pd
+from tqdm import tqdm
+from typing import List
+from deprecated import deprecated
+from datetime import timedelta, datetime
 from czsc import envs
+from czsc.enum import Freq
 from czsc.utils import io
+from czsc.data.ts import ts, pro, format_kline, dt_fmt, date_fmt
 
 
 def update_bars_return(kline: pd.DataFrame, bar_numbers=None):
@@ -338,6 +344,7 @@ class TsDataCache:
             df = pd.read_feather(file_cache)
         else:
             df = pro.trade_cal(exchange='', start_date='19900101', end_date="20300101")
+            df = df.sort_values('cal_date', ascending=True).reset_index(drop=True)
             df.to_feather(file_cache)
         return df
 
@@ -613,6 +620,3 @@ class TsDataCache:
         dfb['上市天数'] = (dfb['trade_date'] - pd.to_datetime(dfb['list_date'], errors='coerce')).apply(lambda x: x.days)
         dfb.to_feather(file_cache)
         return dfb
-
-
-

@@ -1,40 +1,11 @@
 # coding: utf-8
+import os
 import zipfile
 from tqdm import tqdm
 import pandas as pd
-from czsc.analyze import *
+from czsc.analyze import CZSC, RawBar, NewBar, remove_include, FX, check_fx, Direction, kline_pro
 from czsc.enum import Freq
 from collections import OrderedDict
-from czsc.signals.bxt import get_s_like_bs, get_s_d0_bi, get_s_bi_status, get_s_di_bi, get_s_base_xt, get_s_three_bi
-from czsc.signals.ta import get_s_single_k, get_s_three_k, get_s_macd
-
-
-def get_default_signals(c: CZSC) -> OrderedDict:
-    """在 CZSC 对象上计算信号，这个是标准函数，主要用于研究。
-
-    实盘时可以按照自己的需要自定义计算哪些信号。
-
-    :param c: CZSC 对象
-    :return: 信号字典
-    """
-    s = OrderedDict({"symbol": c.symbol, "dt": c.bars_raw[-1].dt, "close": c.bars_raw[-1].close})
-
-    s.update(get_s_d0_bi(c))
-    s.update(get_s_three_k(c, 1))
-    s.update(get_s_di_bi(c, 1))
-    s.update(get_s_macd(c, 1))
-    s.update(get_s_single_k(c, 1))
-    s.update(get_s_bi_status(c))
-
-    for di in range(1, 8):
-        s.update(get_s_three_bi(c, di))
-
-    for di in range(1, 8):
-        s.update(get_s_base_xt(c, di))
-
-    for di in range(1, 8):
-        s.update(get_s_like_bs(c, di))
-    return s
 
 
 cur_path = os.path.split(os.path.realpath(__file__))[0]
@@ -46,6 +17,7 @@ def read_1min():
         data = pd.read_csv(f, encoding='utf-8')
 
     data['dt'] = pd.to_datetime(data['dt'])
+    data['amount'] = data['close'] * data['vol']
     records = data.to_dict('records')
 
     bars = []
@@ -59,9 +31,11 @@ def read_1min():
 def read_daily():
     file_kline = os.path.join(cur_path, "data/000001.SH_D.csv")
     kline = pd.read_csv(file_kline, encoding="utf-8")
+    kline['amount'] = kline['close'] * kline['vol']
+
     kline.loc[:, "dt"] = pd.to_datetime(kline.dt)
     bars = [RawBar(symbol=row['symbol'], id=i, freq=Freq.D, open=row['open'], dt=row['dt'],
-                   close=row['close'], high=row['high'], low=row['low'], vol=row['vol'])
+                   close=row['close'], high=row['high'], low=row['low'], vol=row['vol'], amount=row['amount'])
             for i, row in kline.iterrows()]
     return bars
 
@@ -75,7 +49,7 @@ def test_find_bi():
             bars1.append(NewBar(symbol=bar.symbol, id=bar.id, freq=bar.freq,
                                 dt=bar.dt, open=bar.open,
                                 close=bar.close, high=bar.high, low=bar.low,
-                                vol=bar.vol, elements=[bar]))
+                                vol=bar.vol, amount=bar.amount, elements=[bar]))
         else:
             k1, k2 = bars1[-2:]
             has_include, k3 = remove_include(k1, k2, bar)
@@ -91,43 +65,18 @@ def test_find_bi():
             fxs.append(fx)
 
 
-def get_user_signals(c: CZSC) -> OrderedDict:
-    """在 CZSC 对象上计算信号，这个是标准函数，主要用于研究。
-    实盘时可以按照自己的需要自定义计算哪些信号
-
-    :param c: CZSC 对象
-    :return: 信号字典
-    """
-    s = OrderedDict({"symbol": c.symbol, "dt": c.bars_raw[-1].dt, "close": c.bars_raw[-1].close})
-    # 倒0，特指未确认完成笔
-    # 倒1，倒数第1笔的缩写，表示第N笔
-    # 倒2，倒数第2笔的缩写，表示第N-1笔
-    # 倒3，倒数第3笔的缩写，表示第N-2笔
-    # 以此类推
-    for i in range(1, 3):
-        s.update(get_s_three_bi(c, i))
-    s.update(get_s_d0_bi(c))
-    return s
-
-
 def test_czsc_update():
     bars = read_daily()
     # 不计算任何信号
     c = CZSC(bars)
     assert not c.signals
 
-    # 计算信号
-    c = CZSC(bars, get_signals=get_default_signals)
-    assert len(c.bi_list) == 50 and not c.last_bi_extend
-    assert isinstance(c.signals, OrderedDict) and len(c.signals) == 38
-
-    last_bi = c.bi_list[-1]
-    assert len(last_bi.raw_bars) == 32 and last_bi.power_price == last_bi.power
-    assert len(last_bi.fake_bis) == 11
-    assert last_bi.fake_bis[0].direction == last_bi.fake_bis[-1].direction == last_bi.direction
+    # 测试 ubi 属性
+    ubi = c.ubi
+    assert ubi['direction'] == Direction.Down
+    assert ubi['high_bar'].dt < ubi['low_bar'].dt
     # 测试自定义信号
-    c = CZSC(bars, get_signals=get_user_signals)
-    assert len(c.signals) == 7
+    c = CZSC(bars, get_signals=None)
 
     kline = [x.__dict__ for x in c.bars_raw]
     bi = [{'dt': x.fx_a.dt, "bi": x.fx_a.fx} for x in c.bi_list] + \
@@ -136,17 +85,3 @@ def test_czsc_update():
     file_html = "x.html"
     chart.render(file_html)
     os.remove(file_html)
-
-
-def test_get_signals():
-
-    def get_test_signals(c: CZSC) -> OrderedDict:
-        s = OrderedDict({"symbol": c.symbol, "dt": c.bars_raw[-1].dt, "close": c.bars_raw[-1].close})
-        s.update(get_s_d0_bi(c))
-        return s
-
-    bars = read_daily()
-    # 不计算任何信号
-    c = CZSC(bars, get_signals=get_test_signals)
-    assert c.signals['日线_倒0笔_方向'] == '向下_任意_任意_0'
-    assert c.signals['日线_倒0笔_长度'] == '5到9根K线_任意_任意_0'

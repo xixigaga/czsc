@@ -61,12 +61,12 @@ def heat_map(data: List[dict],
 
 
 def kline_pro(kline: List[dict],
-              fx: List[dict] = None,
-              bi: List[dict] = None,
-              xd: List[dict] = None,
-              bs: List[dict] = None,
+              fx: List[dict] = [],
+              bi: List[dict] = [],
+              xd: List[dict] = [],
+              bs: List[dict] = [],
               title: str = "缠中说禅K线分析",
-              t_seq: List[int] = None,
+              t_seq: List[int] = [],
               width: str = "1400px",
               height: str = '580px') -> Grid:
     """绘制缠中说禅K线分析结果
@@ -120,12 +120,14 @@ def kline_pro(kline: List[dict],
     dz_slider = opts.DataZoomOpts(True, "slider", xaxis_index=[0, 1, 2], pos_top="96%",
                                   pos_bottom="0%", range_start=80, range_end=100)
 
-    yaxis_opts = opts.AxisOpts(is_scale=True,
+    yaxis_opts = opts.AxisOpts(is_scale=True, min_="dataMin", max_="dataMax",
+                               splitline_opts=opts.SplitLineOpts(is_show=False),
                                axislabel_opts=opts.LabelOpts(color="#c7c7c7", font_size=8, position="inside"))
 
     grid0_xaxis_opts = opts.AxisOpts(type_="category", grid_index=0, axislabel_opts=label_not_show_opts,
                                      split_number=20, min_="dataMin", max_="dataMax",
                                      is_scale=True, boundary_gap=False,
+                                     splitline_opts=opts.SplitLineOpts(is_show=False),
                                      axisline_opts=opts.AxisLineOpts(is_on_zero=False))
 
     tool_tip_opts = opts.TooltipOpts(
@@ -198,19 +200,19 @@ def kline_pro(kline: List[dict],
             _price = round(op['price'], 4)
             _info = f"{op['op_desc']} - 价格{_price}"
 
-            if op['op'] in [Operate.LO, Operate.LA1, Operate.LA2]:
+            if op['op'] in [Operate.LO]:
                 long_opens['i'].append(_dt)
                 long_opens['val'].append([_price, _info])
 
-            if op['op'] in [Operate.LE, Operate.LR1, Operate.LR2]:
+            if op['op'] in [Operate.LE]:
                 long_exits['i'].append(_dt)
                 long_exits['val'].append([_price, _info])
 
-            if op['op'] in [Operate.SO, Operate.SA1, Operate.SA2]:
+            if op['op'] in [Operate.SO]:
                 short_opens['i'].append(_dt)
                 short_opens['val'].append([_price, _info])
 
-            if op['op'] in [Operate.SE, Operate.SR1, Operate.SR2]:
+            if op['op'] in [Operate.SE]:
                 short_exits['i'].append(_dt)
                 short_exits['val'].append([_price, _info])
 
@@ -281,16 +283,15 @@ def kline_pro(kline: List[dict],
     chart_ma = Line()
     chart_ma.add_xaxis(xaxis_data=dts)
     if not t_seq:
-        t_seq = [5, 13, 21, 34, 55, 89, 144, 233]
+        t_seq = [5, 13, 21]
 
     ma_keys = dict()
     for t in t_seq:
         ma_keys[f"MA{t}"] = SMA(close, timeperiod=t)
 
     for i, (name, ma) in enumerate(ma_keys.items()):
-        is_selected = True if i < 4 else False
         chart_ma.add_yaxis(series_name=name, y_axis=ma, is_smooth=True,
-                           is_selected=is_selected, symbol_size=0, label_opts=label_not_show_opts,
+                           symbol_size=0, label_opts=label_not_show_opts,
                            linestyle_opts=opts.LineStyleOpts(opacity=0.8, width=1))
 
     chart_ma.set_global_opts(xaxis_opts=grid0_xaxis_opts, legend_opts=legend_not_show_opts)
@@ -303,7 +304,7 @@ def kline_pro(kline: List[dict],
         fx_val = [round(x['fx'], 2) for x in fx]
         chart_fx = Line()
         chart_fx.add_xaxis(fx_dts)
-        chart_fx.add_yaxis(series_name="FX", y_axis=fx_val, is_selected=False,
+        chart_fx.add_yaxis(series_name="FX", y_axis=fx_val,
                            symbol="circle", symbol_size=6, label_opts=label_show_opts,
                            itemstyle_opts=opts.ItemStyleOpts(color="rgba(152, 147, 193, 1.0)", ))
 
@@ -315,7 +316,7 @@ def kline_pro(kline: List[dict],
         bi_val = [round(x['bi'], 2) for x in bi]
         chart_bi = Line()
         chart_bi.add_xaxis(bi_dts)
-        chart_bi.add_yaxis(series_name="BI", y_axis=bi_val, is_selected=True,
+        chart_bi.add_yaxis(series_name="BI", y_axis=bi_val,
                            symbol="diamond", symbol_size=10, label_opts=label_show_opts,
                            itemstyle_opts=opts.ItemStyleOpts(color="rgba(184, 117, 225, 1.0)", ),
                            linestyle_opts=opts.LineStyleOpts(width=1.5))
@@ -328,7 +329,8 @@ def kline_pro(kline: List[dict],
         xd_val = [x['xd'] for x in xd]
         chart_xd = Line()
         chart_xd.add_xaxis(xd_dts)
-        chart_xd.add_yaxis(series_name="XD", y_axis=xd_val, is_selected=True, symbol="triangle", symbol_size=10,
+        chart_xd.add_yaxis(series_name="XD", y_axis=xd_val,
+                           symbol="triangle", symbol_size=10,
                            itemstyle_opts=opts.ItemStyleOpts(color="rgba(37, 141, 54, 1.0)", ))
 
         chart_xd.set_global_opts(xaxis_opts=grid0_xaxis_opts, legend_opts=legend_not_show_opts)
@@ -343,6 +345,7 @@ def kline_pro(kline: List[dict],
         xaxis_opts=opts.AxisOpts(
             type_="category",
             grid_index=1,
+            boundary_gap=False,
             axislabel_opts=opts.LabelOpts(is_show=True, font_size=8, color="#9b9da9"),
         ),
         yaxis_opts=yaxis_opts, legend_opts=legend_not_show_opts,
@@ -358,6 +361,7 @@ def kline_pro(kline: List[dict],
             type_="category",
             grid_index=2,
             axislabel_opts=opts.LabelOpts(is_show=False),
+            splitline_opts=opts.SplitLineOpts(is_show=False),
         ),
         yaxis_opts=opts.AxisOpts(
             grid_index=2,

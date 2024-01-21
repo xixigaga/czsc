@@ -22,18 +22,19 @@ setup(
     long_description_content_type='text/markdown',
     license="Apache Software License",
 
-    url="https://github.com/zengbin93/czsc",
+    url="https://github.com/waditu/czsc",
     packages=find_packages(exclude=['test', 'images', 'docs', 'examples', 'hist']),
     include_package_data=True,
     install_requires=install_requires,
-    package_data={'': ['data/*.csv']},
+    package_data={'': ['utils/china_calendar.feather', 'utils/minites_split.feather']},
     classifiers=[
-            'License :: OSI Approved :: Apache Software License',
-            'Programming Language :: Python :: 3.7',
-            'Programming Language :: Python :: 3.8',
-            'Programming Language :: Python :: 3.9',
-            'Programming Language :: Python :: 3.10',
-        ],
+        'License :: OSI Approved :: Apache Software License',
+        'Programming Language :: Python :: 3.7',
+        'Programming Language :: Python :: 3.8',
+        'Programming Language :: Python :: 3.9',
+        'Programming Language :: Python :: 3.10',
+        'Programming Language :: Python :: 3.11',
+    ],
     entry_points={
         'console_scripts': [
             'czsc = czsc.cmd:czsc',

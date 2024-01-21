@@ -13,7 +13,7 @@ import os
 import docx
 import pandas as pd
 from docx.oxml.ns import qn
-from docx.shared import Cm, Inches, Pt, RGBColor
+from docx.shared import Cm, Pt, RGBColor
 from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
 
 
@@ -56,10 +56,18 @@ class WordWriter:
         title_run.element.rPr.rFonts.set(qn('w:eastAsia'), '微软雅黑')
         title_run.font.color.rgb = RGBColor(0, 0, 0)
 
-    def add_paragraph(self, text, style=None, bold=False):
+    def add_paragraph(self, text, style=None, bold=False, first_line_indent=0.74):
+        """新增段落
+
+        :param text: 文本
+        :param style: 段落样式
+        :param bold: 是否加粗
+        :param first_line_indent: 首行缩进，0.74 表示两个空格
+        :return:
+        """
         p = self.document.add_paragraph(style=style)
         p.paragraph_format.left_indent = Cm(0)
-        p.paragraph_format.first_line_indent = Cm(0.74)
+        p.paragraph_format.first_line_indent = Cm(first_line_indent)
         p.paragraph_format.line_spacing = 1.25
         p.paragraph_format.space_before = Pt(8)
         p.paragraph_format.space_after = Pt(8)
@@ -70,21 +78,22 @@ class WordWriter:
         text.element.rPr.rFonts.set(qn('w:eastAsia'), '宋体')
         text.font.size = Pt(12)
 
-    def add_df_table(self, df: pd.DataFrame, style='Table Grid'):
+    def add_df_table(self, df: pd.DataFrame, style='Table Grid', **kwargs):
         """添加数据表
 
         https://www.jianshu.com/p/93e0df92cf16
+
         :param df: 数据表
         :param style: 表格样式
         :return:
         """
         if df.empty:
-            print(f"add_df_table error: 传入的数据表是空的")
+            print("add_df_table error: 传入的数据表是空的")
             return
 
         table = self.document.add_table(rows=1, cols=df.shape[1], style=style)
         # 设置整个表格字体属性
-        table.style.font.size = Pt(12)
+        table.style.font.size = Pt(kwargs.get("font_size", 10))
         table.style.font.color.rgb = RGBColor(0, 0, 0)
         table.style.paragraph_format.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
 

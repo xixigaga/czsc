@@ -31,8 +31,21 @@ os.environ['backtest_transaction_ratio'] = '1'
 os.environ['backtest_commission_ratio'] = '0.001'
 os.environ['backtest_slippage_ratio'] = '0.0005'
 """
-from czsc.gms.gm_stocks import *
-from czsc.strategies import trader_strategy_a as strategy
+import sys
+sys.path.insert(0, '.')
+sys.path.insert(0, '..')
+from czsc.connectors.gm_connector import *
+from czsc.strategies import CzscStrategyExample2
+
+os.environ['strategy_id'] = 'b24661f5-838d-11ed-882c-988fe0675a5b'
+os.environ['max_sym_pos'] = '0.5'
+os.environ['path_gm_logs'] = 'C:/gm_logs'
+os.environ['backtest_start_time'] = '2020-01-01 14:30:00'
+os.environ['backtest_end_time'] = '2020-12-31 15:30:00'
+os.environ['backtest_initial_cash'] = '100000000'
+os.environ['backtest_transaction_ratio'] = '1'
+os.environ['backtest_commission_ratio'] = '0.001'
+os.environ['backtest_slippage_ratio'] = '0.0005'
 
 
 def init(context):
@@ -50,7 +63,21 @@ def init(context):
         'SHSE.600010',
         'SHSE.600011'
     ]
-    name = f"{strategy.__name__}"
+
+    # 配置消息推送服务，支持飞书、企业微信通道
+    context.push_msg_conf = {
+        "wx_key": "",
+        "fs_app": {
+            # 飞书应用的 app_id 和 app_secret
+            'feishu_app_id': 'cli_a30770****39500e',
+            'feishu_app_secret': 'jVoMf688Gbw2*****HhoVbZ7fiTkTkgg',
+            # 指定消息推送给哪些飞书用户，
+            'feishu_members': ['ou_6fa04b5b4d8*****fdc87d267e8f2a270'],
+        }
+    }
+
+    name = "stocks_sma5"
+    strategy = CzscStrategyExample2
     init_context_universal(context, name)
     init_context_env(context)
     init_context_traders(context, symbols, strategy)
@@ -68,4 +95,3 @@ if __name__ == '__main__':
         backtest_slippage_ratio=float(os.environ['backtest_slippage_ratio']),
         backtest_adjust=ADJUST_PREV,
         backtest_check_cache=1)
-
